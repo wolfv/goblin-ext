@@ -1,0 +1,35 @@
+[package]
+name = "goblin-ext"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90.0"
+authors = ["Wolf Vollprecht <wolf@vollprecht.org>"]
+description = "Mach-O and ELF binary modification utilities built on goblin"
+license = "MIT"
+repository = "https://github.com/wolfv/goblin-ext"
+keywords = ["binary", "mach", "elf", "install_name_tool", "patchelf"]
+categories = ["development-tools", "parsing"]
+
+[dependencies]
+# Use path dependency during development, switch to version for release
+goblin = { path = "../goblin", default-features = false, features = ["mach64", "mach32", "elf64", "elf32", "std"] }
+scroll = { version = "0.13", default-features = false, features = ["derive"] }
+
+[dependencies.sha2]
+version = "0.10"
+optional = true
+
+[features]
+default = ["std", "mach", "elf"]
+std = []
+mach = []
+elf = []
+codesign = ["sha2"]
+
+[[example]]
+name = "install_name_tool"
+required-features = ["codesign", "mach"]
+
+[[example]]
+name = "patchelf"
+required-features = ["elf"]

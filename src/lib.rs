@@ -55,12 +55,20 @@ pub mod macho_writer;
 #[cfg(feature = "elf")]
 pub mod elf_writer;
 
+// Code signing module (macOS ad-hoc signing)
+#[cfg(all(feature = "mach", feature = "codesign"))]
+pub mod codesign;
+
 // Re-export Mach-O types at crate root for convenience
 #[cfg(feature = "mach")]
-pub use macho_writer::{DylibInfo, DylibKind, MachOInfo, MachOWriter, modify_fat_binary};
+pub use macho_writer::{modify_fat_binary, DylibInfo, DylibKind, MachOInfo, MachOWriter};
 
+// Re-export codesign types at crate root for convenience
 #[cfg(all(feature = "mach", feature = "codesign"))]
-pub use macho_writer::{adhoc_sign, codesign_constants, generate_adhoc_signature, is_linker_signed};
+pub use codesign::{
+    adhoc_sign, constants as codesign_constants, extract_entitlements, generate_adhoc_signature,
+    is_linker_signed, AdhocSignOptions, Entitlements,
+};
 
 // Re-export ELF types at crate root for convenience
 #[cfg(feature = "elf")]

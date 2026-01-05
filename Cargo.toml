@@ -1,8 +1,8 @@
 [package]
 name = "goblin-ext"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.90.0"
+edition = "2021"
+rust-version = "1.75.0"
 authors = ["Wolf Vollprecht <wolf@vollprecht.org>"]
 description = "Mach-O and ELF binary modification utilities built on goblin"
 license = "MIT"

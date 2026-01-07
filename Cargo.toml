@@ -19,12 +19,16 @@ scroll = { version = "0.13", default-features = false, features = ["derive"] }
 version = "0.10"
 optional = true
 
+[dependencies.tempfile]
+version = "3"
+optional = true
+
 [features]
 default = ["std", "mach", "elf"]
 std = []
 mach = []
 elf = []
-codesign = ["sha2"]
+codesign = ["sha2", "tempfile"]
 
 [[example]]
 name = "install_name_tool"

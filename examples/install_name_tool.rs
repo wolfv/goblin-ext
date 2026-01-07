@@ -6,6 +6,9 @@
 //! - `-add_rpath <path>`: Add an rpath
 //! - `-delete_rpath <path>`: Delete an rpath
 //! - `-rpath <old> <new>`: Change an rpath
+//! - `--sign`: Ad-hoc code sign the binary (like codesign -s -)
+//! - `-i <identifier>`: Set the code signature identifier
+//! - `--options=runtime`: Enable hardened runtime
 
 use goblin_ext::modify_fat_binary;
 use std::env;
@@ -22,6 +25,14 @@ fn print_usage() {
     eprintln!("  -delete_rpath <path>    Delete an rpath");
     eprintln!("  -rpath <old> <new>      Change an rpath");
     eprintln!("  -o <output_file>        Write to output file (default: modify in place)");
+    #[cfg(feature = "codesign")]
+    {
+        eprintln!();
+        eprintln!("Code signing options:");
+        eprintln!("  --sign                  Ad-hoc sign the binary (like codesign -s -)");
+        eprintln!("  -i <identifier>         Set the code signature identifier");
+        eprintln!("  --options=runtime       Enable hardened runtime");
+    }
     eprintln!();
     eprintln!("Multiple options can be combined in a single invocation.");
 }
@@ -46,6 +57,14 @@ fn main() {
     let mut operations: Vec<Operation> = Vec::new();
     let mut input_file: Option<String> = None;
     let mut output_file: Option<String> = None;
+
+    // Code signing options
+    #[allow(unused_mut)]
+    let mut do_sign = false;
+    #[allow(unused_mut)]
+    let mut sign_identifier: Option<String> = None;
+    #[allow(unused_mut)]
+    let mut hardened_runtime = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -104,6 +123,22 @@ fn main() {
                 output_file = Some(args[i + 1].clone());
                 i += 2;
             }
+            "--sign" | "-s" => {
+                do_sign = true;
+                i += 1;
+            }
+            "-i" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: -i requires an argument");
+                    process::exit(1);
+                }
+                sign_identifier = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--options=runtime" => {
+                hardened_runtime = true;
+                i += 1;
+            }
             "-h" | "--help" => {
                 print_usage();
                 process::exit(0);
@@ -133,7 +168,7 @@ fn main() {
         }
     };
 
-    if operations.is_empty() {
+    if operations.is_empty() && !do_sign {
         eprintln!("Error: No operations specified");
         print_usage();
         process::exit(1);
@@ -180,24 +215,39 @@ fn main() {
         }
     };
 
-    // Re-sign if the binary was linker-signed (like Apple's install_name_tool does)
-    // Only re-sign if the original binary had the linker-signed flag (0x20000)
-    // Files with just adhoc (0x2) flag are NOT re-signed by Apple
+    // Handle code signing
     #[cfg(feature = "codesign")]
     let modified = {
-        use goblin_ext::{adhoc_sign, is_linker_signed};
+        use goblin_ext::{adhoc_sign, is_linker_signed, AdhocSignOptions};
         use std::path::Path;
 
-        // Only re-sign if the original binary was linker-signed
-        // Check the modified data since that's what we'll sign
-        if is_linker_signed(&modified) {
-            let output_path = output_file.as_ref().unwrap_or(&input_file);
-            let identifier = Path::new(output_path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("a.out");
+        let output_path = output_file.as_ref().unwrap_or(&input_file);
+        let default_identifier = Path::new(output_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("a.out");
 
-            match adhoc_sign(modified.clone(), identifier) {
+        // Explicit signing requested via --sign
+        if do_sign {
+            let identifier = sign_identifier.as_deref().unwrap_or(default_identifier);
+            let mut options = AdhocSignOptions::new(identifier);
+            if hardened_runtime {
+                options = options.with_hardened_runtime();
+            }
+
+            match adhoc_sign(modified.clone(), &options) {
+                Ok(signed) => signed,
+                Err(e) => {
+                    eprintln!("Error signing binary: {}", e);
+                    process::exit(1);
+                }
+            }
+        } else if is_linker_signed(&modified) {
+            // Re-sign if the binary was linker-signed (like Apple's install_name_tool does)
+            // Only re-sign if the original binary had the linker-signed flag (0x20000)
+            // Files with just adhoc (0x2) flag are NOT re-signed by Apple
+            let options = AdhocSignOptions::new(default_identifier).with_linker_signed();
+            match adhoc_sign(modified.clone(), &options) {
                 Ok(signed) => signed,
                 Err(_) => modified,
             }

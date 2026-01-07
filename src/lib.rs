@@ -66,8 +66,8 @@ pub use macho_writer::{modify_fat_binary, DylibInfo, DylibKind, MachOInfo, MachO
 // Re-export codesign types at crate root for convenience
 #[cfg(all(feature = "mach", feature = "codesign"))]
 pub use codesign::{
-    adhoc_sign, constants as codesign_constants, extract_entitlements, generate_adhoc_signature,
-    is_linker_signed, AdhocSignOptions, Entitlements,
+    adhoc_sign, adhoc_sign_file, constants as codesign_constants, extract_entitlements,
+    generate_adhoc_signature, is_linker_signed, AdhocSignOptions, Entitlements,
 };
 
 // Re-export ELF types at crate root for convenience

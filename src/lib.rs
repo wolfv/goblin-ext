@@ -35,11 +35,11 @@
 //! let elf = Elf::parse(&data).unwrap();
 //! let mut writer = ElfWriter::new(&data, &elf).unwrap();
 //!
-//! // Set the RUNPATH
-//! writer.set_rpath("/usr/local/lib").unwrap();
+//! // Set the RUNPATH (second argument: false=RUNPATH, true=RPATH)
+//! writer.set_rpath("/usr/local/lib", false).unwrap();
 //!
-//! // Write the modified binary
-//! let output = writer.write().unwrap();
+//! // Build the modified binary
+//! let output = writer.build().unwrap();
 //! std::fs::write("binary_modified", output).unwrap();
 //! ```
 

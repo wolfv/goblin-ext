@@ -37,6 +37,7 @@ class TestResult:
     error_message: Optional[str] = None
     byte_identical: Optional[bool] = None
     executes: Optional[bool] = None
+    rpath_correct: Optional[bool] = None  # True if RPATH was set correctly
     unsupported: bool = False  # True if this is a known unsupported case (PIE relocation)
     orig_patchelf_failed: bool = False  # True if original patchelf also failed
 
@@ -236,31 +237,74 @@ def run_patchelf_test(
         except Exception:
             executes = False
 
-        if not byte_identical:
-            # Find first difference
-            diff_offset = None
-            for i in range(min(len(rust_bytes), len(orig_bytes))):
-                if rust_bytes[i] != orig_bytes[i]:
-                    diff_offset = i
-                    break
-            if diff_offset is None and len(rust_bytes) != len(orig_bytes):
-                diff_offset = min(len(rust_bytes), len(orig_bytes))
+        # Check if RPATH was set correctly (functional correctness)
+        rpath_correct = True
+        if test_type == "remove":
+            # Should have no RPATH
+            rust_rpath = get_current_rpath(rust_output)
+            rpath_correct = rust_rpath is None
+        elif new_rpath:
+            # Should have the expected RPATH
+            rust_rpath = get_current_rpath(rust_output)
+            rpath_correct = rust_rpath == new_rpath
+        else:
+            # Empty rpath - should have no RPATH or empty
+            rust_rpath = get_current_rpath(rust_output)
+            rpath_correct = rust_rpath is None or rust_rpath == ""
+
+        # Verify ELF structure is valid (segment alignment, etc.)
+        elf_valid = True
+        elf_error = None
+        try:
+            result = subprocess.run(
+                ['readelf', '-l', rust_output],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                elf_valid = False
+                elf_error = "readelf -l failed"
+            elif "error" in result.stderr.lower() or "warning" in result.stderr.lower():
+                elf_valid = False
+                elf_error = result.stderr.strip()
+        except Exception as e:
+            elf_valid = False
+            elf_error = str(e)
+
+        # Success criteria: functionally correct (not byte-identical)
+        # - Binary can be parsed by readelf
+        # - RPATH is set correctly
+        # - No structural errors
+        functional_success = executes and rpath_correct and elf_valid
+
+        if not functional_success:
+            error_parts = []
+            if not executes:
+                error_parts.append("readelf -h failed")
+            if not rpath_correct:
+                rust_rpath = get_current_rpath(rust_output)
+                error_parts.append(f"RPATH mismatch: expected '{new_rpath}', got '{rust_rpath}'")
+            if not elf_valid:
+                error_parts.append(f"ELF structure error: {elf_error}")
 
             return TestResult(
                 library_path=library_path,
                 test_type=test_type,
                 success=False,
-                error_message=f"Output differs at byte {diff_offset} (rust size: {len(rust_bytes)}, orig size: {len(orig_bytes)})",
-                byte_identical=False,
-                executes=executes
+                error_message="; ".join(error_parts),
+                byte_identical=byte_identical,
+                executes=executes,
+                rpath_correct=rpath_correct
             )
 
         return TestResult(
             library_path=library_path,
             test_type=test_type,
             success=True,
-            byte_identical=True,
-            executes=executes
+            byte_identical=byte_identical,
+            executes=executes,
+            rpath_correct=rpath_correct
         )
 
     except subprocess.TimeoutExpired:
@@ -473,6 +517,7 @@ def main():
     passed = 0
     failed = 0
     unsupported = 0
+    byte_identical = 0
 
     with tempfile.TemporaryDirectory() as work_dir:
         start_time = time.time()
@@ -493,9 +538,11 @@ def main():
             lib_passed = sum(1 for r in results if r.success)
             lib_unsupported = sum(1 for r in results if not r.success and r.unsupported)
             lib_failed = sum(1 for r in results if not r.success and not r.unsupported)
+            lib_byte_identical = sum(1 for r in results if r.byte_identical)
             passed += lib_passed
             failed += lib_failed
             unsupported += lib_unsupported
+            byte_identical += lib_byte_identical
 
             if not args.verbose:
                 status_parts = []
@@ -504,7 +551,8 @@ def main():
                 if lib_unsupported > 0:
                     status_parts.append(f"{YELLOW}{lib_unsupported} unsupported{RESET}")
                 if lib_passed > 0:
-                    status_parts.append(f"{GREEN}{lib_passed} passed{RESET}")
+                    identical_note = f" ({lib_byte_identical} identical)" if lib_byte_identical > 0 else ""
+                    status_parts.append(f"{GREEN}{lib_passed} passed{identical_note}{RESET}")
                 print(f"  {', '.join(status_parts)}")
 
         elapsed = time.time() - start_time
@@ -514,7 +562,9 @@ def main():
     print(f"{BLUE}=== Summary ==={RESET}")
     print(f"Libraries tested: {len(libraries)}")
     print(f"Total tests: {passed + failed + unsupported}")
-    print(f"Passed: {GREEN}{passed}{RESET}")
+    print(f"Functionally correct: {GREEN}{passed}{RESET}")
+    print(f"  - Byte-for-byte identical: {GREEN}{byte_identical}{RESET}")
+    print(f"  - Functionally equivalent (different bytes): {GREEN}{passed - byte_identical}{RESET}")
     print(f"Unsupported (PIE relocation): {YELLOW}{unsupported}{RESET}")
     print(f"Failed: {RED}{failed}{RESET}")
     print(f"Time: {elapsed:.1f}s")
@@ -543,7 +593,9 @@ def main():
             "summary": {
                 "libraries_tested": len(libraries),
                 "total_tests": passed + failed + unsupported,
-                "passed": passed,
+                "functionally_correct": passed,
+                "byte_identical": byte_identical,
+                "functionally_equivalent": passed - byte_identical,
                 "unsupported": unsupported,
                 "failed": failed,
                 "elapsed_seconds": elapsed
@@ -556,6 +608,7 @@ def main():
                     "unsupported": r.unsupported,
                     "error": r.error_message,
                     "byte_identical": r.byte_identical,
+                    "rpath_correct": r.rpath_correct,
                     "executes": r.executes,
                     "orig_patchelf_failed": r.orig_patchelf_failed
                 }

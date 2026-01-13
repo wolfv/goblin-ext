@@ -12,7 +12,7 @@ categories = ["development-tools", "parsing"]
 
 [dependencies]
 # Use path dependency during development, switch to version for release
-goblin = { path = "../goblin", default-features = false, features = ["mach64", "mach32", "elf64", "elf32", "std"] }
+goblin = { version = "0.10", default-features = false, features = ["mach64", "mach32", "elf64", "elf32", "std"] }
 scroll = { version = "0.13", default-features = false, features = ["derive"] }
 
 [dependencies.sha2]
@@ -29,6 +29,9 @@ std = []
 mach = []
 elf = []
 codesign = ["sha2", "tempfile"]
+
+[dev-dependencies]
+tempfile = "3"
 
 [[example]]
 name = "install_name_tool"

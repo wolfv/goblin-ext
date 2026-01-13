@@ -57,7 +57,7 @@ impl DylibInfo {
         let major = version >> 16;
         let minor = (version >> 8) & 0xff;
         let patch = version & 0xff;
-        alloc::format!("{}.{}.{}", major, minor, patch)
+        alloc::format!("{major}.{minor}.{patch}")
     }
 
     /// Get current version as a formatted string
@@ -342,8 +342,7 @@ impl MachOWriter {
 
         if !found {
             return Err(error::Error::Malformed(alloc::format!(
-                "Dylib '{}' not found",
-                old_name
+                "Dylib '{old_name}' not found"
             )));
         }
 
@@ -401,8 +400,7 @@ impl MachOWriter {
             Ok(())
         } else {
             Err(error::Error::Malformed(alloc::format!(
-                "Dylib '{}' not found",
-                path
+                "Dylib '{path}' not found"
             )))
         }
     }
@@ -435,8 +433,7 @@ impl MachOWriter {
 
             if existing_path == Some(path) {
                 return Err(error::Error::Malformed(alloc::format!(
-                    "Dylib '{}' already exists",
-                    path
+                    "Dylib '{path}' already exists"
                 )));
             }
         }
@@ -482,8 +479,7 @@ impl MachOWriter {
                 };
                 if existing_path == path {
                     return Err(error::Error::Malformed(alloc::format!(
-                        "Rpath '{}' already exists",
-                        path
+                        "Rpath '{path}' already exists"
                     )));
                 }
             }
@@ -536,8 +532,7 @@ impl MachOWriter {
             Ok(())
         } else {
             Err(error::Error::Malformed(alloc::format!(
-                "Rpath '{}' not found",
-                path
+                "Rpath '{path}' not found"
             )))
         }
     }
@@ -561,8 +556,7 @@ impl MachOWriter {
         }
 
         Err(error::Error::Malformed(alloc::format!(
-            "Rpath '{}' not found",
-            old_path
+            "Rpath '{old_path}' not found"
         )))
     }
 
@@ -1255,10 +1249,10 @@ where
     // Check if it's a fat binary
     let magic = data.pread_with::<u32>(0, scroll::BE)?;
 
-    let is_fat64 = magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64;
+    // FAT64 is almost never used in practice, so we only support FAT32
     let is_fat32 = magic == FAT_MAGIC || magic == FAT_CIGAM;
 
-    if !is_fat64 && !is_fat32 {
+    if !is_fat32 {
         // Not a fat binary, process as single arch
         let mut writer = MachOWriter::new(data)?;
         modifier(&mut writer)?;
@@ -1272,13 +1266,8 @@ where
     // Write fat header
     output.extend_from_slice(&data[0..mem::size_of::<FatHeader>()]);
 
-    if is_fat64 {
-        // 64-bit fat binary
-        modify_fat_binary_64(&data, &header, &mut output, &mut modifier)
-    } else {
-        // 32-bit fat binary
-        modify_fat_binary_32(&data, &header, &mut output, &mut modifier)
-    }
+    // 32-bit fat binary
+    modify_fat_binary_32(&data, &header, &mut output, &mut modifier)
 }
 
 /// Align value up to the specified power-of-2 alignment
@@ -1350,75 +1339,8 @@ where
     Ok(output.clone())
 }
 
-/// Process 64-bit fat binary
-fn modify_fat_binary_64<F>(
-    data: &[u8],
-    header: &goblin::mach::fat::FatHeader,
-    output: &mut Vec<u8>,
-    modifier: &mut F,
-) -> error::Result<Vec<u8>>
-where
-    F: FnMut(&mut MachOWriter) -> error::Result<()>,
-{
-    use goblin::mach::fat::*;
-
-    // Parse and modify each arch
-    let mut arch_data = Vec::new();
-    for i in 0..header.nfat_arch {
-        let arch_offset = mem::size_of::<FatHeader>() + i as usize * SIZEOF_FAT_ARCH_64;
-        let arch: FatArch64 = data.pread_with(arch_offset, scroll::BE)?;
-
-        // Extract this arch's data
-        let start = arch.offset as usize;
-        let end = start + arch.size as usize;
-        if end > data.len() {
-            return Err(error::Error::Malformed(
-                "FatArch64 offset/size out of bounds".into(),
-            ));
-        }
-        let arch_bytes = data[start..end].to_vec();
-
-        // Modify it
-        let mut writer = MachOWriter::new(arch_bytes)?;
-        modifier(&mut writer)?;
-        let modified = writer.build()?;
-
-        arch_data.push((arch, modified));
-    }
-
-    // Calculate new offsets using each architecture's alignment requirement
-    let mut current_offset =
-        mem::size_of::<FatHeader>() + header.nfat_arch as usize * SIZEOF_FAT_ARCH_64;
-
-    for (arch, modified_data) in &mut arch_data {
-        // Align to this architecture's requirement (arch.align is a power of 2)
-        current_offset = align_to(current_offset, arch.align);
-        arch.offset = current_offset as u64;
-        arch.size = modified_data.len() as u64;
-
-        let mut arch_bytes = [0u8; SIZEOF_FAT_ARCH_64];
-        arch_bytes.pwrite_with(*arch, 0, scroll::BE)?;
-        output.extend_from_slice(&arch_bytes);
-
-        current_offset += modified_data.len();
-    }
-
-    // Pad to first arch offset
-    while output.len() < arch_data[0].0.offset as usize {
-        output.push(0);
-    }
-
-    // Write arch data
-    for (arch, modified_data) in &arch_data {
-        // Pad to offset
-        while output.len() < arch.offset as usize {
-            output.push(0);
-        }
-        output.extend_from_slice(modified_data);
-    }
-
-    Ok(output.clone())
-}
+// FAT64 support commented out - rarely used in practice
+// To re-enable, goblin needs FAT_MAGIC_64, FAT_CIGAM_64, FatArch64, SIZEOF_FAT_ARCH_64
 
 #[cfg(test)]
 mod tests {

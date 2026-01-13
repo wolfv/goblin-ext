@@ -144,7 +144,7 @@ fn main() {
                 process::exit(0);
             }
             arg if arg.starts_with('-') => {
-                eprintln!("Error: Unknown option: {}", arg);
+                eprintln!("Error: Unknown option: {arg}");
                 print_usage();
                 process::exit(1);
             }
@@ -178,7 +178,7 @@ fn main() {
     let data = match fs::read(&input_file) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Error reading '{}': {}", input_file, e);
+            eprintln!("Error reading '{input_file}': {e}");
             process::exit(1);
         }
     };
@@ -210,7 +210,7 @@ fn main() {
     let modified = match result {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Error modifying binary: {}", e);
+            eprintln!("Error modifying binary: {e}");
             process::exit(1);
         }
     };
@@ -238,7 +238,7 @@ fn main() {
             match adhoc_sign(modified.clone(), &options) {
                 Ok(signed) => signed,
                 Err(e) => {
-                    eprintln!("Error signing binary: {}", e);
+                    eprintln!("Error signing binary: {e}");
                     process::exit(1);
                 }
             }
@@ -259,7 +259,7 @@ fn main() {
     // Write output
     let output_path = output_file.as_ref().unwrap_or(&input_file);
     if let Err(e) = fs::write(output_path, &modified) {
-        eprintln!("Error writing '{}': {}", output_path, e);
+        eprintln!("Error writing '{output_path}': {e}");
         process::exit(1);
     }
 }

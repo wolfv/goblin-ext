@@ -593,7 +593,7 @@ pub fn generate_adhoc_signature(
 
     // Write SuperBlob header
     sig.gwrite_with(superblob, &mut offset, BE)
-        .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+        .map_err(|e| error::Error::Malformed(e.to_string()))?;
 
     // Write BlobIndex entries
     let codedir_index = BlobIndex {
@@ -601,7 +601,7 @@ pub fn generate_adhoc_signature(
         offset: codedir_offset as u32,
     };
     sig.gwrite_with(codedir_index, &mut offset, BE)
-        .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+        .map_err(|e| error::Error::Malformed(e.to_string()))?;
 
     if has_entitlements {
         let ent_index = BlobIndex {
@@ -609,7 +609,7 @@ pub fn generate_adhoc_signature(
             offset: entitlements_offset as u32,
         };
         sig.gwrite_with(ent_index, &mut offset, BE)
-            .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+            .map_err(|e| error::Error::Malformed(e.to_string()))?;
     }
 
     // Calculate entitlements hash for special slot (if present)
@@ -619,10 +619,10 @@ pub fn generate_adhoc_signature(
         let mut ent_offset = 0usize;
         ent_blob
             .gwrite_with(CSMAGIC_EMBEDDED_ENTITLEMENTS, &mut ent_offset, BE)
-            .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+            .map_err(|e| error::Error::Malformed(e.to_string()))?;
         ent_blob
             .gwrite_with(entitlements_blob_size as u32, &mut ent_offset, BE)
-            .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+            .map_err(|e| error::Error::Malformed(e.to_string()))?;
         ent_blob[ent_offset..].copy_from_slice(entitlements_data);
 
         let mut hasher = Sha256::new();
@@ -669,7 +669,7 @@ pub fn generate_adhoc_signature(
     };
 
     sig.gwrite_with(codedir, &mut offset, BE)
-        .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+        .map_err(|e| error::Error::Malformed(e.to_string()))?;
 
     // Write identifier
     sig[offset..offset + id_bytes.len()].copy_from_slice(id_bytes);
@@ -705,9 +705,9 @@ pub fn generate_adhoc_signature(
     // Write entitlements blob (if present)
     if has_entitlements {
         sig.gwrite_with(CSMAGIC_EMBEDDED_ENTITLEMENTS, &mut offset, BE)
-            .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+            .map_err(|e| error::Error::Malformed(e.to_string()))?;
         sig.gwrite_with(entitlements_blob_size as u32, &mut offset, BE)
-            .map_err(|e| error::Error::Malformed(e.to_string().into()))?;
+            .map_err(|e| error::Error::Malformed(e.to_string()))?;
         sig[offset..offset + entitlements_data.len()].copy_from_slice(entitlements_data);
     }
 

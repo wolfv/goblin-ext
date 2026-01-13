@@ -15,7 +15,7 @@ use std::env;
 use std::fs;
 
 fn print_usage(program: &str) {
-    eprintln!("Usage: {} <command> <input-file> [options]", program);
+    eprintln!("Usage: {program} <command> <input-file> [options]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  set-rpath <input> <output> <rpath>     - Set DT_RPATH");
@@ -28,11 +28,10 @@ fn print_usage(program: &str) {
     eprintln!();
     eprintln!("Examples:");
     eprintln!(
-        "  {} set-rpath ./binary ./binary.patched /usr/local/lib",
-        program
+        "  {program} set-rpath ./binary ./binary.patched /usr/local/lib"
     );
-    eprintln!("  {} print-rpath ./binary", program);
-    eprintln!("  {} rpath-to-runpath ./binary ./binary.patched", program);
+    eprintln!("  {program} print-rpath ./binary");
+    eprintln!("  {program} rpath-to-runpath ./binary ./binary.patched");
 }
 
 fn print_rpath(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -44,12 +43,12 @@ fn print_rpath(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         for dyn_entry in &dynamic.dyns {
             if dyn_entry.d_tag == goblin::elf::dynamic::DT_RPATH {
                 if let Some(rpath) = elf.dynstrtab.get_at(dyn_entry.d_val as usize) {
-                    println!("RPATH: {}", rpath);
+                    println!("RPATH: {rpath}");
                     found = true;
                 }
             } else if dyn_entry.d_tag == goblin::elf::dynamic::DT_RUNPATH {
                 if let Some(runpath) = elf.dynstrtab.get_at(dyn_entry.d_val as usize) {
-                    println!("RUNPATH: {}", runpath);
+                    println!("RUNPATH: {runpath}");
                     found = true;
                 }
             }
@@ -74,13 +73,14 @@ fn set_rpath(
     let elf = Elf::parse(&data)?;
     let mut writer = ElfWriter::new(&data, &elf)?;
 
-    writer.set_rpath(rpath)?;
+    // force_rpath=true for DT_RPATH
+    writer.set_rpath(rpath, true)?;
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
-    println!("Successfully set RPATH to: {}", rpath);
-    println!("Output written to: {}", output_path);
+    println!("Successfully set RPATH to: {rpath}");
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -94,13 +94,14 @@ fn set_runpath(
     let elf = Elf::parse(&data)?;
     let mut writer = ElfWriter::new(&data, &elf)?;
 
-    writer.set_runpath(runpath)?;
+    // force_rpath=false for DT_RUNPATH
+    writer.set_rpath(runpath, false)?;
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
-    println!("Successfully set RUNPATH to: {}", runpath);
-    println!("Output written to: {}", output_path);
+    println!("Successfully set RUNPATH to: {runpath}");
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -114,11 +115,11 @@ fn remove_rpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::
     writer.remove_rpath()?;
     writer.remove_runpath()?;
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
     println!("Successfully removed RPATH");
-    println!("Output written to: {}", output_path);
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -130,11 +131,11 @@ fn remove_runpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn std
 
     writer.remove_runpath()?;
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
     println!("Successfully removed RUNPATH");
-    println!("Output written to: {}", output_path);
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -142,15 +143,30 @@ fn remove_runpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn std
 fn rpath_to_runpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let data = fs::read(input_path)?;
     let elf = Elf::parse(&data)?;
+
+    // Find current RPATH
+    let rpath = elf
+        .dynamic
+        .as_ref()
+        .and_then(|d| {
+            d.dyns
+                .iter()
+                .find(|e| e.d_tag == goblin::elf::dynamic::DT_RPATH)
+                .and_then(|e| elf.dynstrtab.get_at(e.d_val as usize))
+        })
+        .ok_or("No RPATH found")?;
+
     let mut writer = ElfWriter::new(&data, &elf)?;
 
-    writer.rpath_to_runpath()?;
+    // Remove RPATH and set RUNPATH
+    writer.remove_rpath()?;
+    writer.set_rpath(rpath, false)?; // false = RUNPATH
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
     println!("Successfully converted RPATH to RUNPATH");
-    println!("Output written to: {}", output_path);
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -158,15 +174,30 @@ fn rpath_to_runpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn s
 fn runpath_to_rpath(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let data = fs::read(input_path)?;
     let elf = Elf::parse(&data)?;
+
+    // Find current RUNPATH
+    let runpath = elf
+        .dynamic
+        .as_ref()
+        .and_then(|d| {
+            d.dyns
+                .iter()
+                .find(|e| e.d_tag == goblin::elf::dynamic::DT_RUNPATH)
+                .and_then(|e| elf.dynstrtab.get_at(e.d_val as usize))
+        })
+        .ok_or("No RUNPATH found")?;
+
     let mut writer = ElfWriter::new(&data, &elf)?;
 
-    writer.runpath_to_rpath()?;
+    // Remove RUNPATH and set RPATH
+    writer.remove_runpath()?;
+    writer.set_rpath(runpath, true)?; // true = RPATH
 
-    let output = writer.write()?;
+    let output = writer.build()?;
     fs::write(output_path, output)?;
 
     println!("Successfully converted RUNPATH to RPATH");
-    println!("Output written to: {}", output_path);
+    println!("Output written to: {output_path}");
 
     Ok(())
 }
@@ -239,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             runpath_to_rpath(&args[2], &args[3])?;
         }
         _ => {
-            eprintln!("Error: Unknown command '{}'", command);
+            eprintln!("Error: Unknown command '{command}'");
             print_usage(&args[0]);
             std::process::exit(1);
         }
